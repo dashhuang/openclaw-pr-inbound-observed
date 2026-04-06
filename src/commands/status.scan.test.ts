@@ -91,6 +91,29 @@ describe("scanStatus", () => {
     );
   });
 
+  it("passes sourceConfig into plugin compatibility checks for summary-mode status output", async () => {
+    configureScanStatus({
+      sourceConfig: createStatusScanConfig({
+        marker: "source",
+        plugins: { enabled: true, allow: ["confluence"] },
+      }),
+      resolvedConfig: createStatusScanConfig({
+        marker: "resolved",
+        plugins: { enabled: true, allow: [] },
+      }),
+      summary: createStatusSummary({ linkChannel: { linked: false } }),
+    });
+
+    await scanStatus({ json: false }, {} as never);
+
+    expect(mocks.buildPluginCompatibilityNotices).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({ marker: "resolved" }),
+        sourceConfig: expect.objectContaining({ marker: "source" }),
+      }),
+    );
+  });
+
   it("skips channel plugin preload for status --json with no channel config", async () => {
     configureScanStatus({
       sourceConfig: createStatusScanConfig({

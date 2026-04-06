@@ -262,7 +262,10 @@ export async function statusAllCommand(
             }
           })()
         : null;
-    const pluginCompatibility = buildPluginCompatibilityNotices({ config: cfg });
+    const pluginCompatibility = buildPluginCompatibilityNotices({
+      config: cfg,
+      sourceConfig: loadedRaw,
+    });
 
     const controlUiEnabled = cfg.gateway?.controlUi?.enabled ?? true;
     const dashboard = controlUiEnabled
