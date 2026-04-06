@@ -109,7 +109,11 @@ export async function scanStatusJsonCore(params: {
     const previousForceStderr = loggingState.forceConsoleToStderr;
     loggingState.forceConsoleToStderr = true;
     try {
-      ensurePluginRegistryLoaded({ scope: "configured-channels" });
+      ensurePluginRegistryLoaded({
+        scope: "configured-channels",
+        config: cfg,
+        activationSourceConfig: sourceConfig,
+      });
     } finally {
       loggingState.forceConsoleToStderr = previousForceStderr;
     }

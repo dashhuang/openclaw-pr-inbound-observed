@@ -52,7 +52,13 @@ describe("scanStatusJsonFast", () => {
 
     await scanStatusJsonFast({}, {} as never);
 
-    expect(mocks.ensurePluginRegistryLoaded).toHaveBeenCalled();
+    expect(mocks.ensurePluginRegistryLoaded).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: "configured-channels",
+        config: expect.any(Object),
+        activationSourceConfig: expect.any(Object),
+      }),
+    );
     expect(stderrDuringLoad).toBe(true);
     expect(loggingStateRef.forceConsoleToStderr).toBe(false);
   });

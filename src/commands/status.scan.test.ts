@@ -200,6 +200,16 @@ describe("scanStatus", () => {
 
     expect(mocks.ensurePluginRegistryLoaded).toHaveBeenCalledWith({
       scope: "configured-channels",
+      config: expect.objectContaining({
+        channels: expect.objectContaining({
+          telegram: expect.objectContaining({ enabled: false }),
+        }),
+      }),
+      activationSourceConfig: expect.objectContaining({
+        channels: expect.objectContaining({
+          telegram: expect.objectContaining({ enabled: false }),
+        }),
+      }),
     });
     // Verify plugin logs were routed to stderr during loading and restored after
     expect(loggingStateRef.forceConsoleToStderr).toBe(false);
@@ -229,6 +239,8 @@ describe("scanStatus", () => {
 
     expect(mocks.ensurePluginRegistryLoaded).toHaveBeenCalledWith({
       scope: "configured-channels",
+      config: expect.any(Object),
+      activationSourceConfig: expect.any(Object),
     });
   });
 });
