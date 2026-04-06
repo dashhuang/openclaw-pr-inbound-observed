@@ -669,5 +669,36 @@ describe("runMessageAction media behavior", () => {
         await fs.rm(sandboxDir, { recursive: true, force: true });
       }
     });
+
+    it("allows media paths under the OpenClaw state media root for workspace sandboxes", async () => {
+      const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "msg-state-"));
+      const sandboxDir = path.join(stateDir, "workspace-food-group");
+      const mediaFile = path.join(stateDir, "media", "tool-image-generation", "reply.png");
+      try {
+        await fs.mkdir(path.dirname(mediaFile), { recursive: true });
+        await fs.mkdir(sandboxDir, { recursive: true });
+
+        const result = await runMessageAction({
+          cfg: slackConfig,
+          action: "send",
+          params: {
+            channel: "slack",
+            target: "#C12345678",
+            media: mediaFile,
+            message: "",
+          },
+          sandboxRoot: sandboxDir,
+          dryRun: true,
+        });
+
+        expect(result.kind).toBe("send");
+        if (result.kind !== "send") {
+          throw new Error("expected send result");
+        }
+        expect(result.sendResult?.mediaUrl).toBe(path.resolve(mediaFile));
+      } finally {
+        await fs.rm(stateDir, { recursive: true, force: true });
+      }
+    });
   });
 });

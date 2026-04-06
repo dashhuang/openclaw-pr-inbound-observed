@@ -99,6 +99,23 @@ describe("resolveSandboxedMediaSource", () => {
     });
   });
 
+  it("allows absolute paths under the OpenClaw state media root for workspace sandboxes", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "sandbox-media-state-"));
+    const sandboxDir = path.join(stateDir, "workspace-food-group");
+    const mediaFile = path.join(stateDir, "media", "tool-image-generation", "reply.png");
+    try {
+      await fs.mkdir(path.dirname(mediaFile), { recursive: true });
+      await fs.mkdir(sandboxDir, { recursive: true });
+      const result = await resolveSandboxedMediaSource({
+        media: mediaFile,
+        sandboxRoot: sandboxDir,
+      });
+      expect(result).toBe(path.resolve(mediaFile));
+    } finally {
+      await fs.rm(stateDir, { recursive: true, force: true });
+    }
+  });
+
   // Group 2: Sandbox-relative paths (existing behavior)
   it("resolves sandbox-relative paths", async () => {
     await withSandboxRoot(async (sandboxDir) => {

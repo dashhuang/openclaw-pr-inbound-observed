@@ -130,6 +130,13 @@ export async function resolveSandboxedMediaSource(params: {
   if (tmpMediaPath) {
     return tmpMediaPath;
   }
+  const stateMediaPath = await resolveAllowedStateMediaPath({
+    candidate,
+    sandboxRoot: params.sandboxRoot,
+  });
+  if (stateMediaPath) {
+    return stateMediaPath;
+  }
   const sandboxResult = await assertSandboxPath({
     filePath: candidate,
     cwd: params.sandboxRoot,
@@ -199,6 +206,40 @@ async function resolveAllowedTmpMediaPath(params: {
     return undefined;
   }
   await assertNoTmpAliasEscape({ filePath: resolved, tmpRoot: openClawTmpDir });
+  return resolved;
+}
+
+function inferOpenClawStateDirFromSandboxRoot(sandboxRoot: string): string | undefined {
+  const resolvedSandboxRoot = path.resolve(sandboxRoot);
+  const sandboxBase = path.basename(resolvedSandboxRoot);
+  if (sandboxBase === "workspace" || sandboxBase.startsWith("workspace-")) {
+    return path.dirname(resolvedSandboxRoot);
+  }
+  return undefined;
+}
+
+async function resolveAllowedStateMediaPath(params: {
+  candidate: string;
+  sandboxRoot: string;
+}): Promise<string | undefined> {
+  const candidateIsAbsolute = path.isAbsolute(expandPath(params.candidate));
+  if (!candidateIsAbsolute) {
+    return undefined;
+  }
+  const stateDir = inferOpenClawStateDirFromSandboxRoot(params.sandboxRoot);
+  if (!stateDir) {
+    return undefined;
+  }
+  const mediaRoot = path.resolve(path.join(stateDir, "media"));
+  const resolved = path.resolve(resolveSandboxInputPath(params.candidate, params.sandboxRoot));
+  if (!isPathInside(mediaRoot, resolved)) {
+    return undefined;
+  }
+  await assertNoPathAliasEscape({
+    absolutePath: resolved,
+    rootPath: mediaRoot,
+    boundaryLabel: "state media root",
+  });
   return resolved;
 }
 
