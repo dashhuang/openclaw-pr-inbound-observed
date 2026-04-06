@@ -17,6 +17,13 @@ import type {
   TelegramGroupConfig,
   TelegramTopicConfig,
 } from "openclaw/plugin-sdk/config-runtime";
+import { resolveChannelGroupPolicy } from "openclaw/plugin-sdk/config-runtime";
+import {
+  createInternalHookEvent,
+  fireAndForgetHook,
+  toInternalMessageReceivedContext,
+  triggerInternalHook,
+} from "openclaw/plugin-sdk/hook-runtime";
 import {
   recordPendingHistoryEntryIfEnabled,
   type HistoryEntry,
@@ -32,11 +39,12 @@ import type {
 } from "./bot-message-context.types.js";
 import {
   buildSenderLabel,
+  buildSenderName,
   expandTextLinks,
   extractTelegramLocation,
   getTelegramTextParts,
   hasBotMention,
-  resolveTelegramMediaPlaceholder,
+  resolveTelegramPrimaryMedia,
 } from "./bot/body-helpers.js";
 import { buildTelegramGroupPeerId } from "./bot/helpers.js";
 import type { TelegramContext } from "./bot/types.js";
@@ -141,8 +149,10 @@ export async function resolveTelegramInboundBody(params: {
   allMedia: TelegramMediaRef[];
   isGroup: boolean;
   chatId: number | string;
+  accountId?: string;
   senderId: string;
   senderUsername: string;
+  sessionKey?: string;
   resolvedThreadId?: number;
   routeAgentId?: string;
   effectiveGroupAllow: NormalizedAllowFrom;
@@ -162,8 +172,10 @@ export async function resolveTelegramInboundBody(params: {
     allMedia,
     isGroup,
     chatId,
+    accountId,
     senderId,
     senderUsername,
+    sessionKey,
     resolvedThreadId,
     routeAgentId,
     effectiveGroupAllow,
@@ -198,7 +210,8 @@ export async function resolveTelegramInboundBody(params: {
   const commandAuthorized = commandGate.commandAuthorized;
   const historyKey = isGroup ? buildTelegramGroupPeerId(chatId, resolvedThreadId) : undefined;
 
-  let placeholder = resolveTelegramMediaPlaceholder(msg) ?? "";
+  const primaryMedia = resolveTelegramPrimaryMedia(msg);
+  let placeholder = primaryMedia?.placeholder ?? "";
   const cachedStickerDescription = allMedia[0]?.stickerMetadata?.cachedDescription;
   const stickerSupportsVision = msg.sticker
     ? await resolveStickerVisionSupport({ cfg, agentId: routeAgentId })
@@ -224,6 +237,12 @@ export async function resolveTelegramInboundBody(params: {
   }
 
   let bodyText = rawBody;
+  if (allMedia.length === 0 && placeholder && rawBody !== placeholder) {
+    const mediaTag = primaryMedia?.fileRef.file_id
+      ? `${placeholder} [file_id:${primaryMedia.fileRef.file_id}]`
+      : placeholder;
+    bodyText = `${mediaTag}\n${bodyText}`.trim();
+  }
   const hasAudio = allMedia.some((media) => media.contentType?.startsWith("audio/"));
   const disableAudioPreflight =
     (topicConfig?.disableAudioPreflight ??
@@ -233,13 +252,13 @@ export async function resolveTelegramInboundBody(params: {
 
   let preflightTranscript: string | undefined;
   const needsPreflightTranscription =
-    isGroup &&
-    requireMention &&
     hasAudio &&
     !hasUserText &&
-    mentionRegexes.length > 0 &&
-    !disableAudioPreflight &&
-    senderAllowedForAudioPreflight;
+    (!isGroup ||
+      (requireMention &&
+        mentionRegexes.length > 0 &&
+        !disableAudioPreflight &&
+        senderAllowedForAudioPreflight));
 
   if (needsPreflightTranscription) {
     try {
@@ -342,6 +361,48 @@ export async function resolveTelegramInboundBody(params: {
           }
         : null,
     });
+    const telegramGroupPolicy = resolveChannelGroupPolicy({
+      cfg,
+      channel: "telegram",
+      groupId: String(chatId),
+      accountId,
+    });
+    const ingestEnabled =
+      topicConfig?.ingest ??
+      telegramGroupPolicy.groupConfig?.ingest ??
+      telegramGroupPolicy.defaultConfig?.ingest;
+    if (ingestEnabled === true && sessionKey) {
+      fireAndForgetHook(
+        triggerInternalHook(
+          createInternalHookEvent(
+            "message",
+            "received",
+            sessionKey,
+            toInternalMessageReceivedContext({
+              from: `telegram:group:${historyKey ?? chatId}`,
+              to: `telegram:${chatId}`,
+              content: rawBody,
+              timestamp: msg.date ? msg.date * 1000 : undefined,
+              channelId: "telegram",
+              accountId,
+              conversationId: `telegram:${chatId}`,
+              messageId: typeof msg.message_id === "number" ? String(msg.message_id) : undefined,
+              senderId: senderId || undefined,
+              senderName: buildSenderName(msg),
+              senderUsername: senderUsername || undefined,
+              provider: "telegram",
+              surface: "telegram",
+              threadId: resolvedThreadId,
+              originatingChannel: "telegram",
+              originatingTo: `telegram:${chatId}`,
+              isGroup: true,
+              groupId: `telegram:${chatId}`,
+            }),
+          ),
+        ),
+        "telegram: mention-skip message hook failed",
+      );
+    }
     return null;
   }
 

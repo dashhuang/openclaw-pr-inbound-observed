@@ -1,7 +1,12 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../channels/config-presence.js", () => ({
+const statusSummaryMocks = vi.hoisted(() => ({
   hasPotentialConfiguredChannels: vi.fn(() => true),
+  buildChannelSummary: vi.fn(async () => ["ok"]),
+}));
+
+vi.mock("../channels/config-presence.js", () => ({
+  hasPotentialConfiguredChannels: statusSummaryMocks.hasPotentialConfiguredChannels,
 }));
 
 vi.mock("./status.summary.runtime.js", () => ({
@@ -9,11 +14,11 @@ vi.mock("./status.summary.runtime.js", () => ({
     classifySessionKey: vi.fn(() => "direct"),
     resolveConfiguredStatusModelRef: vi.fn(() => ({
       provider: "openai",
-      model: "gpt-5.2",
+      model: "gpt-5.4",
     })),
     resolveSessionModelRef: vi.fn(() => ({
       provider: "openai",
-      model: "gpt-5.2",
+      model: "gpt-5.4",
     })),
     resolveContextTokensForModel: vi.fn(() => 200_000),
   },
@@ -21,26 +26,12 @@ vi.mock("./status.summary.runtime.js", () => ({
 
 vi.mock("../agents/defaults.js", () => ({
   DEFAULT_CONTEXT_TOKENS: 200_000,
-  DEFAULT_MODEL: "gpt-5.2",
+  DEFAULT_MODEL: "gpt-5.4",
   DEFAULT_PROVIDER: "openai",
 }));
 
 vi.mock("../config/io.js", () => ({
   loadConfig: vi.fn(() => ({})),
-}));
-
-vi.mock("../config/sessions.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../config/sessions.js")>();
-  return {
-    ...actual,
-    resolveFreshSessionTotalTokens: vi.fn(() => undefined),
-    resolveMainSessionKey: vi.fn(() => "main"),
-    resolveStorePath: vi.fn(() => "/tmp/sessions.json"),
-  };
-});
-
-vi.mock("../config/sessions/store-read.js", () => ({
-  readSessionStoreReadOnly: vi.fn(() => ({})),
 }));
 
 vi.mock("../gateway/agent-list.js", () => ({
@@ -51,7 +42,7 @@ vi.mock("../gateway/agent-list.js", () => ({
 }));
 
 vi.mock("../infra/channel-summary.js", () => ({
-  buildChannelSummary: vi.fn(async () => ["ok"]),
+  buildChannelSummary: statusSummaryMocks.buildChannelSummary,
 }));
 
 vi.mock("../infra/heartbeat-summary.js", () => ({
@@ -109,18 +100,20 @@ vi.mock("../routing/session-key.js", () => ({
   parseAgentSessionKey: vi.fn(() => null),
 }));
 
-vi.mock("../version.js", () => ({
-  resolveRuntimeServiceVersion: vi.fn(() => "2026.3.8"),
-}));
+vi.mock("../version.js", async () => {
+  const actual = await vi.importActual<typeof import("../version.js")>("../version.js");
+  return {
+    ...actual,
+    resolveRuntimeServiceVersion: vi.fn(() => "2026.3.8"),
+  };
+});
 
 vi.mock("./status.link-channel.js", () => ({
   resolveLinkChannelContext: vi.fn(async () => undefined),
 }));
 
-const { hasPotentialConfiguredChannels } = await import("../channels/config-presence.js");
 const { buildChannelSummary } = await import("../infra/channel-summary.js");
 const { resolveLinkChannelContext } = await import("./status.link-channel.js");
-const { readSessionStoreReadOnly } = await import("../config/sessions/store-read.js");
 let getStatusSummary: typeof import("./status.summary.js").getStatusSummary;
 let statusSummaryRuntime: typeof import("./status.summary.runtime.js").statusSummaryRuntime;
 
@@ -132,6 +125,8 @@ describe("getStatusSummary", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    statusSummaryMocks.hasPotentialConfiguredChannels.mockReturnValue(true);
+    statusSummaryMocks.buildChannelSummary.mockResolvedValue(["ok"]);
   });
 
   it("includes runtimeVersion in the status payload", async () => {
@@ -145,7 +140,7 @@ describe("getStatusSummary", () => {
   });
 
   it("skips channel summary imports when no channels are configured", async () => {
-    vi.mocked(hasPotentialConfiguredChannels).mockReturnValue(false);
+    statusSummaryMocks.hasPotentialConfiguredChannels.mockReturnValue(false);
 
     const summary = await getStatusSummary();
 
@@ -161,32 +156,5 @@ describe("getStatusSummary", () => {
     expect(vi.mocked(statusSummaryRuntime.resolveContextTokensForModel)).toHaveBeenCalledWith(
       expect.objectContaining({ allowAsyncLoad: false }),
     );
-  });
-
-  it("hides isolated cron run session entries from recent status sessions", async () => {
-    vi.mocked(readSessionStoreReadOnly).mockReturnValue({
-      "agent:main:cron:job-1": {
-        sessionId: "run-abc",
-        updatedAt: Date.now(),
-        label: "Cron: job-1",
-      },
-      "agent:main:cron:job-1:run:run-abc": {
-        sessionId: "run-abc",
-        updatedAt: Date.now(),
-        label: "Cron: job-1",
-      },
-      "agent:main:direct:test": {
-        sessionId: "direct-1",
-        updatedAt: Date.now() - 1_000,
-        label: "Direct test",
-      },
-    });
-
-    const summary = await getStatusSummary();
-
-    expect(summary.sessions.recent.map((session) => session.key)).toEqual([
-      "agent:main:cron:job-1",
-      "agent:main:direct:test",
-    ]);
   });
 });

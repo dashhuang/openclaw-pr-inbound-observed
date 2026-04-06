@@ -18,7 +18,7 @@ type CompactionBranchEntry = {
 
 type CompactionFallbackSession = {
   agent: {
-    setModel: (model: Model<Api>) => void;
+    setModel?: (model: Model<Api>) => void;
   };
   model: Model<Api> | undefined;
   sessionId: string;
@@ -158,12 +158,16 @@ async function withTemporarySessionModel<T>(
   if (originalModel && modelsAreEqual(originalModel, candidate)) {
     return fn();
   }
-  session.agent.setModel(candidate);
+  const setModel = session.agent.setModel;
+  if (!setModel) {
+    return fn();
+  }
+  setModel(candidate);
   try {
     return await fn();
   } finally {
     if (originalModel) {
-      session.agent.setModel(originalModel);
+      setModel(originalModel);
     }
   }
 }

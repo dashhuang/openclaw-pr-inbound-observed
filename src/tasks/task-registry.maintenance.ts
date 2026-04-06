@@ -1,6 +1,9 @@
 import { readAcpSessionEntry } from "../acp/runtime/session-meta.js";
 import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
+import { isCronJobActive } from "../cron/active-jobs.js";
+import { getAgentRunContext } from "../infra/agent-events.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
+import { deriveSessionChatType } from "../sessions/session-chat-type.js";
 import {
   deleteTaskRecordById,
   ensureTaskRegistryReady,
@@ -67,7 +70,27 @@ function resolveTaskReferenceAt(task: TaskRecord): number {
   return task.startedAt ?? task.lastEventAt ?? task.createdAt;
 }
 
+function hasActiveCliRun(task: TaskRecord): boolean {
+  const candidateRunIds = [task.sourceId, task.runId];
+  for (const candidate of candidateRunIds) {
+    const runId = candidate?.trim();
+    if (runId && getAgentRunContext(runId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function hasBackingSession(task: TaskRecord): boolean {
+  if (task.runtime === "cron") {
+    const jobId = task.sourceId?.trim();
+    return jobId ? isCronJobActive(jobId) : false;
+  }
+
+  if (task.runtime === "cli" && hasActiveCliRun(task)) {
+    return true;
+  }
+
   const childSessionKey = task.childSessionKey?.trim();
   if (!childSessionKey) {
     return true;
@@ -82,11 +105,18 @@ function hasBackingSession(task: TaskRecord): boolean {
     return Boolean(acpEntry.entry);
   }
   if (task.runtime === "subagent" || task.runtime === "cli") {
+    if (task.runtime === "cli") {
+      const chatType = deriveSessionChatType(childSessionKey);
+      if (chatType === "channel" || chatType === "group" || chatType === "direct") {
+        return false;
+      }
+    }
     const agentId = parseAgentSessionKey(childSessionKey)?.agentId;
     const storePath = resolveStorePath(undefined, { agentId });
     const store = loadSessionStore(storePath);
     return Boolean(findSessionEntryByKey(store, childSessionKey));
   }
+
   return true;
 }
 
@@ -179,12 +209,12 @@ export function reconcileTaskRecordForOperatorInspection(
   tasksSnapshot?: TaskRecord[],
 ): TaskRecord {
   const now = Date.now();
-  if (!shouldMarkLost(task, now)) {
-    const snapshot = tasksSnapshot ?? listTaskRecords();
-    if (!shouldMarkSupersededCronTaskLost(task, snapshot)) {
-      return task;
-    }
+  const snapshot = tasksSnapshot ?? listTaskRecords();
+  if (shouldMarkSupersededCronTaskLost(task, snapshot)) {
     return projectTaskLost(task, now, "superseded by later cron run");
+  }
+  if (!shouldMarkLost(task, now)) {
+    return task;
   }
   return projectTaskLost(task, now);
 }
@@ -265,8 +295,8 @@ export async function runTaskRegistryMaintenance(): Promise<TaskRegistryMaintena
     if (!current) {
       continue;
     }
-    if (shouldMarkLost(current, now)) {
-      const next = markTaskLost(current, now);
+    if (shouldMarkSupersededCronTaskLost(current, tasks)) {
+      const next = markTaskLost(current, now, "superseded by later cron run");
       if (next.status === "lost") {
         reconciled += 1;
       }
@@ -276,8 +306,8 @@ export async function runTaskRegistryMaintenance(): Promise<TaskRegistryMaintena
       }
       continue;
     }
-    if (shouldMarkSupersededCronTaskLost(current, tasks)) {
-      const next = markTaskLost(current, now, "superseded by later cron run");
+    if (shouldMarkLost(current, now)) {
+      const next = markTaskLost(current, now);
       if (next.status === "lost") {
         reconciled += 1;
       }
@@ -330,7 +360,7 @@ export function startTaskRegistryMaintenance() {
   sweeper.unref?.();
 }
 
-export function stopTaskRegistryMaintenanceForTests() {
+export function stopTaskRegistryMaintenance() {
   if (deferredSweep) {
     clearTimeout(deferredSweep);
     deferredSweep = null;
@@ -341,6 +371,8 @@ export function stopTaskRegistryMaintenanceForTests() {
   }
   sweepInProgress = false;
 }
+
+export const stopTaskRegistryMaintenanceForTests = stopTaskRegistryMaintenance;
 
 export function getReconciledTaskById(taskId: string): TaskRecord | undefined {
   const task = getTaskById(taskId);
