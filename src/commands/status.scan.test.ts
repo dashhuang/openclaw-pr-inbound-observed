@@ -219,6 +219,7 @@ describe("scanStatus", () => {
     expect(mocks.callGateway).not.toHaveBeenCalledWith(
       expect.objectContaining({ method: "channels.status" }),
     );
+    expect(mocks.buildPluginCompatibilityNotices).not.toHaveBeenCalled();
   });
 
   it("preloads configured channel plugins for status --json when channel auth is env-only", async () => {
@@ -241,6 +242,27 @@ describe("scanStatus", () => {
       scope: "configured-channels",
       config: expect.any(Object),
       activationSourceConfig: expect.any(Object),
+    });
+  });
+
+  it("passes sourceConfig into plugin compatibility loading for text status output", async () => {
+    configureScanStatus({
+      sourceConfig: createStatusScanConfig({
+        marker: "source",
+        channels: { telegram: { enabled: false } },
+      }),
+      resolvedConfig: createStatusScanConfig({
+        marker: "resolved",
+        channels: { telegram: { enabled: false } },
+      }),
+      summary: createStatusSummary({ linkChannel: { linked: false } }),
+    });
+
+    await scanStatus({ json: false }, {} as never);
+
+    expect(mocks.buildPluginCompatibilityNotices).toHaveBeenCalledWith({
+      config: expect.objectContaining({ marker: "resolved" }),
+      sourceConfig: expect.objectContaining({ marker: "source" }),
     });
   });
 });

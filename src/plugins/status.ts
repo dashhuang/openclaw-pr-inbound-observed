@@ -153,6 +153,7 @@ function resolveReportedPluginVersion(
 
 type PluginReportParams = {
   config?: ReturnType<typeof loadConfig>;
+  sourceConfig?: ReturnType<typeof loadConfig>;
   workspaceDir?: string;
   /** Use an explicit env when plugin roots should resolve independently from process.env. */
   env?: NodeJS.ProcessEnv;
@@ -162,8 +163,8 @@ function buildPluginReport(
   params: PluginReportParams | undefined,
   loadModules: boolean,
 ): PluginStatusReport {
-  const rawConfig = params?.config ?? loadConfig();
-  const autoEnabled = resolveStatusConfig(rawConfig, params?.env);
+  const rawConfig = params?.sourceConfig ?? params?.config ?? loadConfig();
+  const autoEnabled = resolveStatusConfig(params?.config ?? rawConfig, params?.env);
   const config = autoEnabled.config;
   const workspaceDir = params?.workspaceDir
     ? params.workspaceDir
@@ -285,17 +286,19 @@ function deriveInspectShape(params: {
 export function buildPluginInspectReport(params: {
   id: string;
   config?: ReturnType<typeof loadConfig>;
+  sourceConfig?: ReturnType<typeof loadConfig>;
   workspaceDir?: string;
   env?: NodeJS.ProcessEnv;
   report?: PluginStatusReport;
 }): PluginInspectReport | null {
-  const rawConfig = params.config ?? loadConfig();
-  const resolvedConfig = resolveStatusConfig(rawConfig, params.env);
+  const rawConfig = params.sourceConfig ?? params.config ?? loadConfig();
+  const resolvedConfig = resolveStatusConfig(params.config ?? rawConfig, params.env);
   const config = resolvedConfig.config;
   const report =
     params.report ??
     buildPluginDiagnosticsReport({
-      config: rawConfig,
+      config: params.config ?? rawConfig,
+      sourceConfig: rawConfig,
       workspaceDir: params.workspaceDir,
       env: params.env,
     });
@@ -420,15 +423,17 @@ export function buildPluginInspectReport(params: {
 
 export function buildAllPluginInspectReports(params?: {
   config?: ReturnType<typeof loadConfig>;
+  sourceConfig?: ReturnType<typeof loadConfig>;
   workspaceDir?: string;
   env?: NodeJS.ProcessEnv;
   report?: PluginStatusReport;
 }): PluginInspectReport[] {
-  const rawConfig = params?.config ?? loadConfig();
+  const rawConfig = params?.sourceConfig ?? params?.config ?? loadConfig();
   const report =
     params?.report ??
     buildPluginDiagnosticsReport({
-      config: rawConfig,
+      config: params?.config ?? rawConfig,
+      sourceConfig: rawConfig,
       workspaceDir: params?.workspaceDir,
       env: params?.env,
     });
@@ -437,7 +442,8 @@ export function buildAllPluginInspectReports(params?: {
     .map((plugin) =>
       buildPluginInspectReport({
         id: plugin.id,
-        config: rawConfig,
+        config: params?.config ?? rawConfig,
+        sourceConfig: rawConfig,
         report,
       }),
     )
@@ -446,6 +452,7 @@ export function buildAllPluginInspectReports(params?: {
 
 export function buildPluginCompatibilityWarnings(params?: {
   config?: ReturnType<typeof loadConfig>;
+  sourceConfig?: ReturnType<typeof loadConfig>;
   workspaceDir?: string;
   env?: NodeJS.ProcessEnv;
   report?: PluginStatusReport;
@@ -455,6 +462,7 @@ export function buildPluginCompatibilityWarnings(params?: {
 
 export function buildPluginCompatibilityNotices(params?: {
   config?: ReturnType<typeof loadConfig>;
+  sourceConfig?: ReturnType<typeof loadConfig>;
   workspaceDir?: string;
   env?: NodeJS.ProcessEnv;
   report?: PluginStatusReport;

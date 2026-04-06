@@ -348,7 +348,10 @@ export async function scanStatus(
       progress.tick();
 
       progress.setLabel("Checking plugins…");
-      const pluginCompatibility = buildPluginCompatibilityNotices({ config: cfg });
+      const pluginCompatibility = buildPluginCompatibilityNotices({
+        config: cfg,
+        sourceConfig: loadedRaw,
+      });
       progress.tick();
 
       progress.setLabel("Reading sessions…");
